@@ -1,0 +1,294 @@
+{
+  "format": "layers-model",
+  "generatedBy": "keras v3.10.0",
+  "convertedBy": "TensorFlow.js Converter v4.22.0",
+  "modelTopology": {
+    "keras_version": "3.10.0",
+    "backend": "tensorflow",
+    "model_config": {
+      "class_name": "Functional",
+      "config": {
+        "name": "functional_1",
+        "trainable": true,
+        "layers": [
+          {
+            "class_name": "InputLayer",
+            "config": {
+              "batch_shape": [null, 224, 224, 3],
+              "dtype": "float32",
+              "sparse": false,
+              "ragged": false,
+              "name": "input_layer_1"
+            },
+            "name": "input_layer_1",
+            "inbound_nodes": []
+          },
+          {
+            "class_name": "Functional",
+            "config": {
+              "name": "mobilenetv2_1.00_224",
+              "trainable": false,
+              "layers": [
+                {
+                  "class_name": "InputLayer",
+                  "config": {
+                    "batch_shape": [null, 224, 224, 3],
+                    "dtype": "float32",
+                    "sparse": false,
+                    "ragged": false,
+                    "name": "input_layer"
+                  },
+                  "name": "input_layer",
+                  "inbound_nodes": []
+                },
+                // ... (keep all the MobileNetV2 layers as they are)
+                // ... (truncated for brevity, but include all MobileNetV2 layers from your original)
+              ],
+              "input_layers": [["input_layer", 0, 0]],
+              "output_layers": [["out_relu", 0, 0]]
+            },
+            "name": "mobilenetv2_1.00_224",
+            "inbound_nodes": [
+              {
+                "args": [
+                  {
+                    "class_name": "__keras_tensor__",
+                    "config": {
+                      "shape": [null, 224, 224, 3],
+                      "dtype": "float32",
+                      "keras_history": ["input_layer_1", 0, 0]
+                    }
+                  }
+                ],
+                "kwargs": {
+                  "training": false
+                }
+              }
+            ]
+          },
+          {
+            "class_name": "GlobalAveragePooling2D",
+            "config": {
+              "name": "global_average_pooling2d",
+              "trainable": true,
+              "dtype": {
+                "module": "keras",
+                "class_name": "DTypePolicy",
+                "config": {
+                  "name": "float32"
+                },
+                "registered_name": null
+              },
+              "data_format": "channels_last",
+              "keepdims": false
+            },
+            "name": "global_average_pooling2d",
+            "inbound_nodes": [
+              {
+                "args": [
+                  {
+                    "class_name": "__keras_tensor__",
+                    "config": {
+                      "shape": [null, 7, 7, 1280],
+                      "dtype": "float32",
+                      "keras_history": ["mobilenetv2_1.00_224", 0, 0]
+                    }
+                  }
+                ],
+                "kwargs": {}
+              }
+            ]
+          },
+          {
+            "class_name": "Dense",
+            "config": {
+              "name": "dense",
+              "trainable": true,
+              "dtype": {
+                "module": "keras",
+                "class_name": "DTypePolicy",
+                "config": {
+                  "name": "float32"
+                },
+                "registered_name": null
+              },
+              "units": 128,
+              "activation": "relu",
+              "use_bias": true,
+              "kernel_initializer": {
+                "module": "keras.initializers",
+                "class_name": "GlorotUniform",
+                "config": {
+                  "seed": null
+                },
+                "registered_name": null
+              },
+              "bias_initializer": {
+                "module": "keras.initializers",
+                "class_name": "Zeros",
+                "config": {},
+                "registered_name": null
+              },
+              "kernel_regularizer": null,
+              "bias_regularizer": null,
+              "kernel_constraint": null,
+              "bias_constraint": null
+            },
+            "name": "dense",
+            "inbound_nodes": [
+              {
+                "args": [
+                  {
+                    "class_name": "__keras_tensor__",
+                    "config": {
+                      "shape": [null, 1280],
+                      "dtype": "float32",
+                      "keras_history": ["global_average_pooling2d", 0, 0]
+                    }
+                  }
+                ],
+                "kwargs": {}
+              }
+            ]
+          },
+          {
+            "class_name": "Dropout",
+            "config": {
+              "name": "dropout",
+              "trainable": true,
+              "dtype": {
+                "module": "keras",
+                "class_name": "DTypePolicy",
+                "config": {
+                  "name": "float32"
+                },
+                "registered_name": null
+              },
+              "rate": 0.5,
+              "seed": null,
+              "noise_shape": null
+            },
+            "name": "dropout",
+            "inbound_nodes": [
+              {
+                "args": [
+                  {
+                    "class_name": "__keras_tensor__",
+                    "config": {
+                      "shape": [null, 128],
+                      "dtype": "float32",
+                      "keras_history": ["dense", 0, 0]
+                    }
+                  }
+                ],
+                "kwargs": {
+                  "training": false
+                }
+              }
+            ]
+          },
+          {
+            "class_name": "Dense",
+            "config": {
+              "name": "dense_1",
+              "trainable": true,
+              "dtype": {
+                "module": "keras",
+                "class_name": "DTypePolicy",
+                "config": {
+                  "name": "float32"
+                },
+                "registered_name": null
+              },
+              "units": 3,
+              "activation": "softmax",
+              "use_bias": true,
+              "kernel_initializer": {
+                "module": "keras.initializers",
+                "class_name": "GlorotUniform",
+                "config": {
+                  "seed": null
+                },
+                "registered_name": null
+              },
+              "bias_initializer": {
+                "module": "keras.initializers",
+                "class_name": "Zeros",
+                "config": {},
+                "registered_name": null
+              },
+              "kernel_regularizer": null,
+              "bias_regularizer": null,
+              "kernel_constraint": null,
+              "bias_constraint": null
+            },
+            "name": "dense_1",
+            "inbound_nodes": [
+              {
+                "args": [
+                  {
+                    "class_name": "__keras_tensor__",
+                    "config": {
+                      "shape": [null, 128],
+                      "dtype": "float32",
+                      "keras_history": ["dropout", 0, 0]
+                    }
+                  }
+                ],
+                "kwargs": {}
+              }
+            ]
+          }
+        ],
+        "input_layers": [["input_layer_1", 0, 0]],
+        "output_layers": [["dense_1", 0, 0]]
+      }
+    },
+    "training_config": {
+      "loss": {
+        "class_name": "SparseCategoricalCrossentropy",
+        "config": {
+          "name": "sparse_categorical_crossentropy",
+          "reduction": "sum_over_batch_size",
+          "from_logits": false,
+          "ignore_class": null
+        }
+      },
+      "loss_weights": null,
+      "metrics": ["accuracy"],
+      "weighted_metrics": null,
+      "run_eagerly": false,
+      "steps_per_execution": 1,
+      "jit_compile": false,
+      "optimizer_config": {
+        "class_name": "Adam",
+        "config": {
+          "name": "adam",
+          "learning_rate": 9.999999747378752e-05,
+          "weight_decay": null,
+          "clipnorm": null,
+          "global_clipnorm": null,
+          "clipvalue": null,
+          "use_ema": false,
+          "ema_momentum": 0.99,
+          "ema_overwrite_frequency": null,
+          "loss_scale_factor": null,
+          "gradient_accumulation_steps": null,
+          "beta_1": 0.9,
+          "beta_2": 0.999,
+          "epsilon": 1e-07,
+          "amsgrad": false
+        }
+      }
+    }
+  },
+  "weightsManifest": [
+    {
+      "paths": ["group1-shard1of3.bin", "group1-shard2of3.bin", "group1-shard3of3.bin"],
+      "weights": [
+        // ... (keep all your weight definitions as they are)
+        // ... (truncated for brevity)
+      ]
+    }
+  ]
+}
