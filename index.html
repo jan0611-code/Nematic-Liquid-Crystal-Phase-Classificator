@@ -1,0 +1,426 @@
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<!-- TensorFlow.js untuk model inferensi di browser -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.15.0/dist/tf.min.js"></script>
+<script>
+    // Data kelas untuk klasifikasi - TIDAK PERLU DIUBAH
+    const classData = [
+        { 
+            id: 0, 
+            name: "Williams Domain", 
+            description: "Domains with regular and stable patterns", 
+            color: "#4361ee",
+            details: "Stable and regular domain pattern with a clear and well-defined crystal structure. Characterized by consistent and repetitive domain formation."
+        },
+        { 
+            id: 1, 
+            name: "Fluctuating Williams Domain", 
+            description: "Domains with dynamic fluctuations", 
+            color: "#f72585",
+            details: "Domain patterns with dynamic fluctuations, indicating structural changes or instability in the pattern. Showing variations in the shape and size of the domains."
+        },
+        { 
+            id: 2, 
+            name: "Grid Pattern", 
+            description: "Regular grid or grid pattern", 
+            color: "#4cc9f0",
+            details: "A grid pattern with a regular, periodic structure that forms a checkerboard-like pattern. It has high symmetry and a consistent, repeating pattern."
+        }
+    ];
+    
+    // Variabel untuk model
+    let model = null;
+    let isModelLoaded = false;
+    
+    // DOM Elements
+    const uploadArea = document.getElementById('uploadArea');
+    const browseBtn = document.getElementById('browseBtn');
+    const imageInput = document.getElementById('imageInput');
+    const previewContainer = document.getElementById('previewContainer');
+    const previewImage = document.getElementById('previewImage');
+    const removeImageBtn = document.getElementById('removeImageBtn');
+    const classifyBtn = document.getElementById('classifyBtn');
+    const loader = document.getElementById('loader');
+    const initialMessage = document.getElementById('initialMessage');
+    const resultsContainer = document.getElementById('resultsContainer');
+    const allPredictions = document.getElementById('allPredictions');
+    const topPhaseBadge = document.getElementById('topPhaseBadge');
+    const topPhaseName = document.getElementById('topPhaseName');
+    const topPhaseConfidence = document.getElementById('topPhaseConfidence');
+    const topPhaseDesc = document.getElementById('topPhaseDesc');
+    const topPhaseProgress = document.getElementById('topPhaseProgress');
+    const sampleImages = document.querySelectorAll('.sample-img');
+    
+    // Event Listeners
+    browseBtn.addEventListener('click', () => imageInput.click());
+    
+    imageInput.addEventListener('change', function(e) {
+        if (this.files && this.files[0]) {
+            handleImageUpload(this.files[0]);
+        }
+    });
+    
+    uploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        this.classList.add('dragover');
+    });
+    
+    uploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        this.classList.remove('dragover');
+    });
+    
+    uploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        this.classList.remove('dragover');
+        
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            handleImageUpload(e.dataTransfer.files[0]);
+        }
+    });
+    
+    removeImageBtn.addEventListener('click', function() {
+        resetImage();
+    });
+    
+    classifyBtn.addEventListener('click', async function() {
+        await classifyImage();
+    });
+    
+    // Event listener untuk gambar contoh
+    sampleImages.forEach(img => {
+        img.addEventListener('click', function() {
+            // Set active class
+            sampleImages.forEach(i => i.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Set preview image based on selected sample
+            const className = this.getAttribute('data-class');
+            let sampleImageUrl = '';
+            
+            switch(className) {
+                case 'williams':
+                    sampleImageUrl = 'https://jan0611-code.github.io/Nematic-Liquid-Crystal-Phase-Classificator/WD.jpg';
+                    break;
+                case 'fluctuating':
+                    sampleImageUrl = 'https://jan0611-code.github.io/Nematic-Liquid-Crystal-Phase-Classificator/FWD.jpg';
+                    break;
+                case 'grid':
+                    sampleImageUrl = 'https://jan0611-code.github.io/Nematic-Liquid-Crystal-Phase-Classificator/GP.jpg';
+                    break;
+            }
+            
+            previewImage.src = sampleImageUrl;
+            previewContainer.style.display = 'block';
+            classifyBtn.disabled = false;
+            uploadArea.style.display = 'none';
+        });
+    });
+    
+    // Functions
+    function handleImageUpload(file) {
+        // Check file type
+        if (!file.type.match('image.*')) {
+            showError('Uploaded files must be images.');
+            return;
+        }
+        
+        // Check file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            showError('The file size is too large. Maximum 5MB.');
+            return;
+        }
+        
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+            previewImage.src = e.target.result;
+            previewContainer.style.display = 'block';
+            classifyBtn.disabled = false;
+            uploadArea.style.display = 'none';
+            
+            // Remove active class from sample images
+            sampleImages.forEach(img => img.classList.remove('active'));
+        };
+        
+        reader.readAsDataURL(file);
+    }
+    
+    function resetImage() {
+        previewImage.src = '';
+        previewContainer.style.display = 'none';
+        classifyBtn.disabled = true;
+        uploadArea.style.display = 'block';
+        imageInput.value = '';
+        
+        // Remove active class from sample images
+        sampleImages.forEach(img => img.classList.remove('active'));
+        
+        // Reset results
+        resultsContainer.style.display = 'none';
+        initialMessage.style.display = 'block';
+    }
+    
+    // ============================================
+    // BAGIAN YANG DIUBAH: LOAD MODEL ASLI
+    // ============================================
+    
+    // Fungsi untuk memuat model TF.js YANG ASLI
+    async function loadRealModel() {
+        try {
+            console.log('Loading TF.js model...');
+            
+            // PATH KE MODEL ANDA: sesuaikan dengan lokasi file
+            const modelUrl = './tfjs_model/model.json';  // Jika model di folder tfjs_model
+            
+            model = await tf.loadLayersModel(modelUrl);
+            
+            console.log('Model successfully loaded!');
+            console.log('Input shape:', model.inputs[0].shape);
+            console.log('Output shape:', model.outputs[0].shape);
+            
+            // Update UI
+            document.getElementById('status-message')?.remove();
+            const status = document.createElement('div');
+            status.id = 'status-message';
+            status.className = 'alert alert-success alert-dismissible fade show mt-3';
+            status.innerHTML = `
+                TF.js model successfully loaded! Ready to classify images.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.querySelector('.container').prepend(status);
+            
+            isModelLoaded = true;
+            return true;
+            
+        } catch (error) {
+            console.error('Error loading model:', error);
+            
+            // Show error in UI
+            document.getElementById('status-message')?.remove();
+            const status = document.createElement('div');
+            status.id = 'status-message';
+            status.className = 'alert alert-danger alert-dismissible fade show mt-3';
+            status.innerHTML = `
+                Failed to load model: ${error.message}. 
+                Make sure the model.json and .bin files are available in the tfjs_model/ folder.
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.querySelector('.container').prepend(status);
+            
+            return false;
+        }
+    }
+    
+    // Fungsi untuk preprocessing gambar untuk model ANDA
+    function preprocessImageForModel(imageElement) {
+        return tf.tidy(() => {
+            // Model Anda mengharapkan input: (None, 224, 224, 3)
+            const tensor = tf.browser.fromPixels(imageElement)
+                .resizeNearestNeighbor([224, 224]) // Resize ke 224x224
+                .toFloat()
+                .expandDims(0); // Tambah batch dimension
+            
+            // Normalisasi ke [0, 1] - SESUAIKAN DENGAN TRAINING ANDA
+            // Jika training menggunakan [0, 255], jangan dinormalisasi
+            // Jika training menggunakan [0, 1], gunakan:
+            const normalized = tensor.div(255.0);
+            
+            return normalized;
+        });
+    }
+    
+    // Fungsi utama klasifikasi dengan model asli
+    async function classifyImage() {
+        // Validasi
+        if (!isModelLoaded) {
+            showError('The model has not been loaded. Please refresh the page.');
+            return;
+        }
+        
+        if (!previewImage.src) {
+            showError('Please upload the image first.');
+            return;
+        }
+        
+        // Show loader
+        loader.style.display = 'block';
+        initialMessage.style.display = 'none';
+        resultsContainer.style.display = 'none';
+        classifyBtn.disabled = true;
+        
+        try {
+            console.log('Starting classification...');
+            
+            // Preprocessing gambar
+            const startTime = performance.now();
+            const tensor = preprocessImageForModel(previewImage);
+            
+            console.log('Input tensor shape:', tensor.shape);
+            
+            // Prediksi dengan model asli
+            const predictionsTensor = model.predict(tensor);
+            const predictionsData = await predictionsTensor.data();
+            
+            const endTime = performance.now();
+            const inferenceTime = endTime - startTime;
+            
+            console.log(`⏱️ Inference time: ${inferenceTime.toFixed(0)}ms`);
+            console.log('Raw predictions:', Array.from(predictionsData));
+            
+            // Bersihkan tensor
+            tensor.dispose();
+            predictionsTensor.dispose();
+            
+            // Proses hasil prediksi
+            const processedPredictions = processPredictions(predictionsData);
+            
+            // Tampilkan hasil
+            displayResults(processedPredictions);
+            
+            // Hide loader and show results
+            loader.style.display = 'none';
+            resultsContainer.style.display = 'block';
+            
+            // Log hasil
+            console.log('Top prediction:', processedPredictions[0]);
+            
+        } catch (error) {
+            console.error('Error during classification:', error);
+            showError(`There is an error: ${error.message}`);
+        } finally {
+            loader.style.display = 'none';
+            classifyBtn.disabled = false;
+        }
+    }
+    
+    // Proses data prediksi dari model
+    function processPredictions(predictionData) {
+        // predictionData adalah array dari 3 angka (karena Anda punya 3 kelas)
+        const predictions = [];
+        
+        for (let i = 0; i < classData.length; i++) {
+            let confidence = predictionData[i];
+            
+            // Pastikan confidence adalah probability (0-1)
+            if (confidence < 0) confidence = 0;
+            if (confidence > 1) confidence = confidence / 100; // Jika dalam persen
+            
+            // Buat object prediksi
+            predictions.push({
+                classIndex: i,
+                className: classData[i].name,
+                confidence: confidence * 100, // Convert to percentage
+                description: classData[i].description,
+                color: classData[i].color,
+                details: classData[i].details
+            });
+        }
+        
+        // Normalisasi agar total = 100%
+        const total = predictions.reduce((sum, p) => sum + p.confidence, 0);
+        if (Math.abs(total - 100) > 0.1) {
+            predictions.forEach(p => p.confidence = (p.confidence / total) * 100);
+        }
+        
+        // Sort by confidence (highest first)
+        predictions.sort((a, b) => b.confidence - a.confidence);
+        
+        return predictions;
+    }
+    
+    function displayResults(predictions) {
+        // Clear previous predictions
+        allPredictions.innerHTML = '';
+        
+        // Set top prediction
+        const topPrediction = predictions[0];
+        topPhaseBadge.textContent = topPrediction.className;
+        topPhaseBadge.style.backgroundColor = topPrediction.color;
+        topPhaseName.textContent = topPrediction.className;
+        topPhaseConfidence.textContent = `${topPrediction.confidence.toFixed(2)}%`;
+        topPhaseDesc.textContent = topPrediction.description;
+        topPhaseProgress.style.width = `${topPrediction.confidence}%`;
+        topPhaseProgress.style.backgroundColor = topPrediction.color;
+        
+        // Add all predictions
+        predictions.forEach((prediction, index) => {
+            const predictionElement = document.createElement('div');
+            predictionElement.className = `prediction-item ${index === 0 ? 'highest' : ''}`;
+            
+            predictionElement.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="badge phase-badge me-2" style="background-color: ${prediction.color}">${prediction.className}</span>
+                        <span class="text-muted">${prediction.description}</span>
+                    </div>
+                    <div class="text-end">
+                        <div class="fw-bold prediction-confidence">${prediction.confidence.toFixed(2)}%</div>
+                        <div class="progress" style="width: 100px; height: 6px;">
+                            <div class="progress-bar" role="progressbar" style="width: ${prediction.confidence}%; background-color: ${prediction.color}"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            allPredictions.appendChild(predictionElement);
+        });
+        
+        // Update class descriptions
+        updateClassDescriptions(predictions);
+    }
+    
+    function updateClassDescriptions(predictions) {
+        // Find confidence for each class
+        const williamsPred = predictions.find(p => p.className === "Williams Domain");
+        const fluctuatingPred = predictions.find(p => p.className === "Fluctuating Williams Domain");
+        const gridPred = predictions.find(p => p.className === "Grid Pattern");
+        
+        // Update description elements
+        const descElements = document.querySelectorAll('.class-description');
+        descElements.forEach(el => {
+            // Remove existing confidence badge if any
+            const existingConfidence = el.querySelector('.confidence-badge');
+            if (existingConfidence) {
+                existingConfidence.remove();
+            }
+            
+            // Add new confidence
+            let confidence = 0;
+            if (el.classList.contains('class-williams') && williamsPred) {
+                confidence = williamsPred.confidence;
+            } else if (el.classList.contains('class-fluctuating') && fluctuatingPred) {
+                confidence = fluctuatingPred.confidence;
+            } else if (el.classList.contains('class-grid') && gridPred) {
+                confidence = gridPred.confidence;
+            }
+            
+            if (confidence > 0) {
+                const confidenceEl = document.createElement('div');
+                confidenceEl.className = 'mt-2 confidence-badge';
+                confidenceEl.innerHTML = `<span class="badge bg-light text-dark">
+                    <i class="fas fa-chart-line me-1"></i>Confidence: ${confidence.toFixed(2)}%
+                </span>`;
+                el.appendChild(confidenceEl);
+            }
+        });
+    }
+    
+    function showError(message) {
+        document.getElementById('errorMessage').textContent = message;
+        const errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
+        errorModal.show();
+    }
+    
+    // Initialize on page load
+    window.addEventListener('DOMContentLoaded', async () => {
+        console.log('Starting a domain pattern classification application with a native model...');
+        
+        // Load real model
+        await loadRealModel();
+        
+        // Enable classify button if there's already an image
+        if (previewImage.src && previewImage.src !== '') {
+            classifyBtn.disabled = false;
+        }
+    });
+</script>
