@@ -1,426 +1,740 @@
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-<!-- TensorFlow.js untuk model inferensi di browser -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.15.0/dist/tf.min.js"></script>
-<script>
-    // Data kelas untuk klasifikasi - TIDAK PERLU DIUBAH
-    const classData = [
-        { 
-            id: 0, 
-            name: "Williams Domain", 
-            description: "Domains with regular and stable patterns", 
-            color: "#4361ee",
-            details: "Stable and regular domain pattern with a clear and well-defined crystal structure. Characterized by consistent and repetitive domain formation."
-        },
-        { 
-            id: 1, 
-            name: "Fluctuating Williams Domain", 
-            description: "Domains with dynamic fluctuations", 
-            color: "#f72585",
-            details: "Domain patterns with dynamic fluctuations, indicating structural changes or instability in the pattern. Showing variations in the shape and size of the domains."
-        },
-        { 
-            id: 2, 
-            name: "Grid Pattern", 
-            description: "Regular grid or grid pattern", 
-            color: "#4cc9f0",
-            details: "A grid pattern with a regular, periodic structure that forms a checkerboard-like pattern. It has high symmetry and a consistent, repeating pattern."
-        }
-    ];
-    
-    // Variabel untuk model
-    let model = null;
-    let isModelLoaded = false;
-    
-    // DOM Elements
-    const uploadArea = document.getElementById('uploadArea');
-    const browseBtn = document.getElementById('browseBtn');
-    const imageInput = document.getElementById('imageInput');
-    const previewContainer = document.getElementById('previewContainer');
-    const previewImage = document.getElementById('previewImage');
-    const removeImageBtn = document.getElementById('removeImageBtn');
-    const classifyBtn = document.getElementById('classifyBtn');
-    const loader = document.getElementById('loader');
-    const initialMessage = document.getElementById('initialMessage');
-    const resultsContainer = document.getElementById('resultsContainer');
-    const allPredictions = document.getElementById('allPredictions');
-    const topPhaseBadge = document.getElementById('topPhaseBadge');
-    const topPhaseName = document.getElementById('topPhaseName');
-    const topPhaseConfidence = document.getElementById('topPhaseConfidence');
-    const topPhaseDesc = document.getElementById('topPhaseDesc');
-    const topPhaseProgress = document.getElementById('topPhaseProgress');
-    const sampleImages = document.querySelectorAll('.sample-img');
-    
-    // Event Listeners
-    browseBtn.addEventListener('click', () => imageInput.click());
-    
-    imageInput.addEventListener('change', function(e) {
-        if (this.files && this.files[0]) {
-            handleImageUpload(this.files[0]);
-        }
-    });
-    
-    uploadArea.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        this.classList.add('dragover');
-    });
-    
-    uploadArea.addEventListener('dragleave', function(e) {
-        e.preventDefault();
-        this.classList.remove('dragover');
-    });
-    
-    uploadArea.addEventListener('drop', function(e) {
-        e.preventDefault();
-        this.classList.remove('dragover');
-        
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            handleImageUpload(e.dataTransfer.files[0]);
-        }
-    });
-    
-    removeImageBtn.addEventListener('click', function() {
-        resetImage();
-    });
-    
-    classifyBtn.addEventListener('click', async function() {
-        await classifyImage();
-    });
-    
-    // Event listener untuk gambar contoh
-    sampleImages.forEach(img => {
-        img.addEventListener('click', function() {
-            // Set active class
-            sampleImages.forEach(i => i.classList.remove('active'));
-            this.classList.add('active');
-            
-            // Set preview image based on selected sample
-            const className = this.getAttribute('data-class');
-            let sampleImageUrl = '';
-            
-            switch(className) {
-                case 'williams':
-                    sampleImageUrl = 'https://jan0611-code.github.io/Nematic-Liquid-Crystal-Phase-Classificator/WD.jpg';
-                    break;
-                case 'fluctuating':
-                    sampleImageUrl = 'https://jan0611-code.github.io/Nematic-Liquid-Crystal-Phase-Classificator/FWD.jpg';
-                    break;
-                case 'grid':
-                    sampleImageUrl = 'https://jan0611-code.github.io/Nematic-Liquid-Crystal-Phase-Classificator/GP.jpg';
-                    break;
-            }
-            
-            previewImage.src = sampleImageUrl;
-            previewContainer.style.display = 'block';
-            classifyBtn.disabled = false;
-            uploadArea.style.display = 'none';
-        });
-    });
-    
-    // Functions
-    function handleImageUpload(file) {
-        // Check file type
-        if (!file.type.match('image.*')) {
-            showError('Uploaded files must be images.');
-            return;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Domain Pattern Classification with VGG16</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --secondary-color: #3a0ca3;
+            --williams-color: #4361ee;
+            --fluctuating-color: #f72585;
+            --grid-color: #4cc9f0;
+            --light-color: #f8f9fa;
+            --dark-color: #212529;
         }
         
-        // Check file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-            showError('The file size is too large. Maximum 5MB.');
-            return;
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         
-        const reader = new FileReader();
-        
-        reader.onload = function(e) {
-            previewImage.src = e.target.result;
-            previewContainer.style.display = 'block';
-            classifyBtn.disabled = false;
-            uploadArea.style.display = 'none';
-            
-            // Remove active class from sample images
-            sampleImages.forEach(img => img.classList.remove('active'));
-        };
-        
-        reader.readAsDataURL(file);
-    }
-    
-    function resetImage() {
-        previewImage.src = '';
-        previewContainer.style.display = 'none';
-        classifyBtn.disabled = true;
-        uploadArea.style.display = 'block';
-        imageInput.value = '';
-        
-        // Remove active class from sample images
-        sampleImages.forEach(img => img.classList.remove('active'));
-        
-        // Reset results
-        resultsContainer.style.display = 'none';
-        initialMessage.style.display = 'block';
-    }
-    
-    // ============================================
-    // BAGIAN YANG DIUBAH: LOAD MODEL ASLI
-    // ============================================
-    
-    // Fungsi untuk memuat model TF.js YANG ASLI
-    async function loadRealModel() {
-        try {
-            console.log('Loading TF.js model...');
-            
-            // PATH KE MODEL ANDA: sesuaikan dengan lokasi file
-            const modelUrl = './tfjs_model/model.json';  // Jika model di folder tfjs_model
-            
-            model = await tf.loadLayersModel(modelUrl);
-            
-            console.log('Model successfully loaded!');
-            console.log('Input shape:', model.inputs[0].shape);
-            console.log('Output shape:', model.outputs[0].shape);
-            
-            // Update UI
-            document.getElementById('status-message')?.remove();
-            const status = document.createElement('div');
-            status.id = 'status-message';
-            status.className = 'alert alert-success alert-dismissible fade show mt-3';
-            status.innerHTML = `
-                TF.js model successfully loaded! Ready to classify images.
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-            document.querySelector('.container').prepend(status);
-            
-            isModelLoaded = true;
-            return true;
-            
-        } catch (error) {
-            console.error('Error loading model:', error);
-            
-            // Show error in UI
-            document.getElementById('status-message')?.remove();
-            const status = document.createElement('div');
-            status.id = 'status-message';
-            status.className = 'alert alert-danger alert-dismissible fade show mt-3';
-            status.innerHTML = `
-                Failed to load model: ${error.message}. 
-                Make sure the model.json and .bin files are available in the tfjs_model/ folder.
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-            document.querySelector('.container').prepend(status);
-            
-            return false;
-        }
-    }
-    
-    // Fungsi untuk preprocessing gambar untuk model ANDA
-    function preprocessImageForModel(imageElement) {
-        return tf.tidy(() => {
-            // Model Anda mengharapkan input: (None, 224, 224, 3)
-            const tensor = tf.browser.fromPixels(imageElement)
-                .resizeNearestNeighbor([224, 224]) // Resize ke 224x224
-                .toFloat()
-                .expandDims(0); // Tambah batch dimension
-            
-            // Normalisasi ke [0, 1] - SESUAIKAN DENGAN TRAINING ANDA
-            // Jika training menggunakan [0, 255], jangan dinormalisasi
-            // Jika training menggunakan [0, 1], gunakan:
-            const normalized = tensor.div(255.0);
-            
-            return normalized;
-        });
-    }
-    
-    // Fungsi utama klasifikasi dengan model asli
-    async function classifyImage() {
-        // Validasi
-        if (!isModelLoaded) {
-            showError('The model has not been loaded. Please refresh the page.');
-            return;
+        .header {
+            background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
+            color: white;
+            border-radius: 0 0 20px 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            padding: 2rem 0;
         }
         
-        if (!previewImage.src) {
-            showError('Please upload the image first.');
-            return;
+        .card {
+            border-radius: 15px;
+            border: none;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            transition: transform 0.3s ease;
         }
         
-        // Show loader
-        loader.style.display = 'block';
-        initialMessage.style.display = 'none';
-        resultsContainer.style.display = 'none';
-        classifyBtn.disabled = true;
-        
-        try {
-            console.log('Starting classification...');
-            
-            // Preprocessing gambar
-            const startTime = performance.now();
-            const tensor = preprocessImageForModel(previewImage);
-            
-            console.log('Input tensor shape:', tensor.shape);
-            
-            // Prediksi dengan model asli
-            const predictionsTensor = model.predict(tensor);
-            const predictionsData = await predictionsTensor.data();
-            
-            const endTime = performance.now();
-            const inferenceTime = endTime - startTime;
-            
-            console.log(`⏱️ Inference time: ${inferenceTime.toFixed(0)}ms`);
-            console.log('Raw predictions:', Array.from(predictionsData));
-            
-            // Bersihkan tensor
-            tensor.dispose();
-            predictionsTensor.dispose();
-            
-            // Proses hasil prediksi
-            const processedPredictions = processPredictions(predictionsData);
-            
-            // Tampilkan hasil
-            displayResults(processedPredictions);
-            
-            // Hide loader and show results
-            loader.style.display = 'none';
-            resultsContainer.style.display = 'block';
-            
-            // Log hasil
-            console.log('Top prediction:', processedPredictions[0]);
-            
-        } catch (error) {
-            console.error('Error during classification:', error);
-            showError(`There is an error: ${error.message}`);
-        } finally {
-            loader.style.display = 'none';
-            classifyBtn.disabled = false;
+        .card:hover {
+            transform: translateY(-5px);
         }
-    }
+        
+        .upload-area {
+            border: 3px dashed #ccc;
+            border-radius: 15px;
+            padding: 3rem 1rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background-color: white;
+        }
+        
+        .upload-area:hover, .upload-area.dragover {
+            border-color: var(--primary-color);
+            background-color: rgba(67, 97, 238, 0.05);
+        }
+        
+        .preview-img {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .result-card {
+            background: linear-gradient(to right, #ffffff, #f8f9fa);
+            border-left: 5px solid var(--accent-color);
+        }
+        
+        .prediction-item {
+            padding: 10px 15px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+            transition: all 0.2s ease;
+        }
+        
+        .prediction-item:hover {
+            background-color: #e9ecef;
+            transform: translateX(5px);
+        }
+        
+        .prediction-item.highest {
+            background-color: rgba(67, 97, 238, 0.1);
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        .progress-bar {
+            border-radius: 5px;
+        }
+        
+        .phase-badge {
+            font-size: 0.9rem;
+            padding: 5px 15px;
+            border-radius: 20px;
+        }
+        
+        .loader {
+            display: none;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid var(--primary-color);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .footer {
+            margin-top: 3rem;
+            padding: 1.5rem 0;
+            background-color: rgba(0, 0, 0, 0.03);
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
+        }
+        
+        .info-box {
+            background-color: #e7f3ff;
+            border-left: 4px solid var(--primary-color);
+            padding: 15px;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .class-description {
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 4px solid;
+        }
+        
+        .class-williams {
+            border-color: var(--williams-color);
+            background-color: rgba(67, 97, 238, 0.1);
+        }
+        
+        .class-fluctuating {
+            border-color: var(--fluctuating-color);
+            background-color: rgba(247, 37, 133, 0.1);
+        }
+        
+        .class-grid {
+            border-color: var(--grid-color);
+            background-color: rgba(76, 201, 240, 0.1);
+        }
+        
+        .sample-images {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .sample-img {
+            width: 120px;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border: 2px solid transparent;
+        }
+        
+        .sample-img:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .sample-img.active {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.3);
+        }
+        
+        .prediction-confidence {
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+        
+        .model-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            max-width: 300px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Model Status Alert -->
+    <div id="modelStatus" class="model-status" style="display: none;"></div>
     
-    // Proses data prediksi dari model
-    function processPredictions(predictionData) {
-        // predictionData adalah array dari 3 angka (karena Anda punya 3 kelas)
-        const predictions = [];
-        
-        for (let i = 0; i < classData.length; i++) {
-            let confidence = predictionData[i];
-            
-            // Pastikan confidence adalah probability (0-1)
-            if (confidence < 0) confidence = 0;
-            if (confidence > 1) confidence = confidence / 100; // Jika dalam persen
-            
-            // Buat object prediksi
-            predictions.push({
-                classIndex: i,
-                className: classData[i].name,
-                confidence: confidence * 100, // Convert to percentage
-                description: classData[i].description,
-                color: classData[i].color,
-                details: classData[i].details
-            });
-        }
-        
-        // Normalisasi agar total = 100%
-        const total = predictions.reduce((sum, p) => sum + p.confidence, 0);
-        if (Math.abs(total - 100) > 0.1) {
-            predictions.forEach(p => p.confidence = (p.confidence / total) * 100);
-        }
-        
-        // Sort by confidence (highest first)
-        predictions.sort((a, b) => b.confidence - a.confidence);
-        
-        return predictions;
-    }
+    <!-- Header -->
+    <div class="header mb-5">
+        <div class="container">
+            <h1 class="text-center"><i class="fas fa-atom me-3"></i>Domain Pattern Classification with VGG16</h1>
+            <p class="text-center lead mt-3">Classify images into Williams Domain, Fluctuating Williams Domain, or Grid Pattern using VGG16 model</p>
+        </div>
+    </div>
     
-    function displayResults(predictions) {
-        // Clear previous predictions
-        allPredictions.innerHTML = '';
-        
-        // Set top prediction
-        const topPrediction = predictions[0];
-        topPhaseBadge.textContent = topPrediction.className;
-        topPhaseBadge.style.backgroundColor = topPrediction.color;
-        topPhaseName.textContent = topPrediction.className;
-        topPhaseConfidence.textContent = `${topPrediction.confidence.toFixed(2)}%`;
-        topPhaseDesc.textContent = topPrediction.description;
-        topPhaseProgress.style.width = `${topPrediction.confidence}%`;
-        topPhaseProgress.style.backgroundColor = topPrediction.color;
-        
-        // Add all predictions
-        predictions.forEach((prediction, index) => {
-            const predictionElement = document.createElement('div');
-            predictionElement.className = `prediction-item ${index === 0 ? 'highest' : ''}`;
-            
-            predictionElement.innerHTML = `
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <span class="badge phase-badge me-2" style="background-color: ${prediction.color}">${prediction.className}</span>
-                        <span class="text-muted">${prediction.description}</span>
+    <div class="container">
+        <div class="row">
+            <!-- Upload Section -->
+            <div class="col-lg-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-white">
+                        <h4 class="mb-0"><i class="fas fa-upload me-2"></i>Upload Image</h4>
                     </div>
-                    <div class="text-end">
-                        <div class="fw-bold prediction-confidence">${prediction.confidence.toFixed(2)}%</div>
-                        <div class="progress" style="width: 100px; height: 6px;">
-                            <div class="progress-bar" role="progressbar" style="width: ${prediction.confidence}%; background-color: ${prediction.color}"></div>
+                    <div class="card-body">
+                        <div class="info-box mb-4">
+                            <h6><i class="fas fa-info-circle me-2"></i>Model Information:</h6>
+                            <p class="mb-0">This VGG16 model has been trained specifically to classify images into three domain patterns: <strong>Williams Domain</strong>, <strong>Fluctuating Williams Domain</strong>, and <strong>Grid Pattern</strong>.</p>
+                            <p class="mb-0 mt-2"><strong>Format:</strong> TensorFlow.js | <strong>Input:</strong> 224×224 RGB images</p>
+                        </div>
+                        
+                        <div id="uploadArea" class="upload-area mb-4">
+                            <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                            <h5>Drag and drop image here</h5>
+                            <p class="text-muted">or</p>
+                            <button id="browseBtn" class="btn btn-primary btn-lg">
+                                <i class="fas fa-folder-open me-2"></i>Choose File
+                            </button>
+                            <input type="file" id="imageInput" accept="image/*" class="d-none">
+                            <p class="text-muted mt-3">Supported formats: JPG, PNG, GIF. Maximum 5MB.</p>
+                        </div>
+                        
+                        <!-- Preview -->
+                        <div id="previewContainer" class="text-center mb-4" style="display: none;">
+                            <h5>Image Preview</h5>
+                            <img id="previewImage" class="preview-img mt-3" src="" alt="Preview">
+                            <div class="mt-3">
+                                <button id="removeImageBtn" class="btn btn-outline-danger btn-sm">
+                                    <i class="fas fa-trash-alt me-1"></i>Remove Image
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Classification Button -->
+                        <div class="text-center">
+                            <button id="classifyBtn" class="btn btn-primary btn-lg px-5" disabled>
+                                <i class="fas fa-cogs me-2"></i>Classify Image
+                            </button>
+                        </div>
+                        
+                        <!-- Sample Images -->
+                        <div class="mt-5">
+                            <h6><i class="fas fa-images me-2"></i>Sample Images</h6>
+                            <p class="text-muted">Click sample images to test:</p>
+                            <div class="sample-images">
+                                <img src="WD.jpg" alt="Williams Domain" class="sample-img" data-class="williams">
+                                <img src="FWD.jpg" alt="Fluctuating Williams Domain" class="sample-img" data-class="fluctuating">
+                                <img src="GP.jpg" alt="Grid Pattern" class="sample-img" data-class="grid">
+                            </div>
                         </div>
                     </div>
                 </div>
+            </div>
+            
+            <!-- Results Section -->
+            <div class="col-lg-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-white">
+                        <h4 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Classification Results</h4>
+                    </div>
+                    <div class="card-body">
+                        <!-- Loader -->
+                        <div id="loader" class="loader"></div>
+                        
+                        <!-- Initial Message -->
+                        <div id="initialMessage" class="text-center py-5">
+                            <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
+                            <h5 class="text-muted">Results will appear here</h5>
+                            <p class="text-muted">Upload an image and click "Classify Image" to start.</p>
+                        </div>
+                        
+                        <!-- Results -->
+                        <div id="resultsContainer" style="display: none;">
+                            <div class="result-card p-4 mb-4">
+                                <h5>Top Prediction</h5>
+                                <div class="d-flex align-items-center mt-3">
+                                    <div class="flex-shrink-0">
+                                        <span id="topPhaseBadge" class="badge phase-badge" style="background-color: #4361ee">Williams Domain</span>
+                                    </div>
+                                    <div class="flex-grow-1 ms-3">
+                                        <h4 id="topPhaseName" class="mb-1">Williams Domain</h4>
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <span id="topPhaseConfidence" class="fw-bold prediction-confidence">0%</span>
+                                            <span id="topPhaseDesc" class="text-muted">Domain with regular patterns</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="progress mt-2" style="height: 10px;">
+                                    <div id="topPhaseProgress" class="progress-bar" role="progressbar" style="width: 0%"></div>
+                                </div>
+                            </div>
+                            
+                            <h6 class="mb-3">All Predictions:</h6>
+                            <div id="allPredictions">
+                                <!-- Predictions will be inserted here -->
+                            </div>
+                            
+                            <!-- Class Descriptions -->
+                            <div class="mt-4">
+                                <h6><i class="fas fa-list-alt me-2"></i>Class Descriptions:</h6>
+                                <div class="class-description class-williams">
+                                    <h6 class="fw-bold"><i class="fas fa-th-large me-2"></i>Williams Domain</h6>
+                                    <p class="mb-0">Stable and regular domain pattern with clear, well-defined crystal structure. Characterized by consistent and repetitive domain formation.</p>
+                                </div>
+                                <div class="class-description class-fluctuating">
+                                    <h6 class="fw-bold"><i class="fas fa-wave-square me-2"></i>Fluctuating Williams Domain</h6>
+                                    <p class="mb-0">Domain pattern with dynamic fluctuations, showing structural changes or instability in the pattern. Displays variations in domain shape and size.</p>
+                                </div>
+                                <div class="class-description class-grid">
+                                    <h6 class="fw-bold"><i class="fas fa-border-all me-2"></i>Grid Pattern</h6>
+                                    <p class="mb-0">Grid or lattice pattern with regular periodic structure forming box-like patterns. Has high symmetry and consistent repeating patterns.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Information Section -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-white">
+                        <h4 class="mb-0"><i class="fas fa-info-circle me-2"></i>VGG16 Model Information</h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <div class="text-center p-3">
+                                    <i class="fas fa-brain fa-2x text-primary mb-3"></i>
+                                    <h5>Model Architecture</h5>
+                                    <p>Based on VGG16 architecture modified for 3-class classification. Uses transfer learning from ImageNet pre-trained weights.</p>
+                                </div>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <div class="text-center p-3">
+                                    <i class="fas fa-code fa-2x text-primary mb-3"></i>
+                                    <h5>Web Deployment</h5>
+                                    <p>Converted to TensorFlow.js format for browser-based inference. No server required - all processing happens in your browser.</p>
+                                </div>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <div class="text-center p-3">
+                                    <i class="fas fa-rocket fa-2x text-primary mb-3"></i>
+                                    <h5>Real-time Processing</h5>
+                                    <p>Classifies images in real-time using WebGL acceleration. Works on all modern browsers including mobile devices.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Footer -->
+    <div class="footer mt-5">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6 text-center text-md-start">
+                    <p class="mb-0">Domain Pattern Classification VGG16. Using TensorFlow.js model.</p>
+                </div>
+                <div class="col-md-6 text-center text-md-end">
+                    <p class="mb-0">Model: VGG16 | Classes: Williams Domain, Fluctuating Williams Domain, Grid Pattern</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for error -->
+    <div class="modal fade" id="errorModal" tabindex="-1" aria-labelledby="errorModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="errorModalLabel"><i class="fas fa-exclamation-triangle text-danger me-2"></i>Error Occurred</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="errorMessage">An error occurred while processing the image. Please try again.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.15.0/dist/tf.min.js"></script>
+    
+    <script>
+        // ============================================
+        // MODEL CONFIGURATION
+        // ============================================
+        const MODEL_CONFIG = {
+            url: 'tfjs_model/model.json',  // Path to your model
+            inputSize: [224, 224],         // Model input size
+            classes: [
+                { id: 0, name: "Williams Domain", color: "#4361ee", description: "Domain with regular and stable patterns" },
+                { id: 1, name: "Fluctuating Williams Domain", color: "#f72585", description: "Domain with dynamic fluctuations" },
+                { id: 2, name: "Grid Pattern", color: "#4cc9f0", description: "Regular grid or lattice pattern" }
+            ]
+        };
+        
+        // ============================================
+        // GLOBAL VARIABLES
+        // ============================================
+        let model = null;
+        let isModelLoaded = false;
+        
+        // ============================================
+        // DOM ELEMENTS
+        // ============================================
+        const uploadArea = document.getElementById('uploadArea');
+        const browseBtn = document.getElementById('browseBtn');
+        const imageInput = document.getElementById('imageInput');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const removeImageBtn = document.getElementById('removeImageBtn');
+        const classifyBtn = document.getElementById('classifyBtn');
+        const loader = document.getElementById('loader');
+        const initialMessage = document.getElementById('initialMessage');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const allPredictions = document.getElementById('allPredictions');
+        const topPhaseBadge = document.getElementById('topPhaseBadge');
+        const topPhaseName = document.getElementById('topPhaseName');
+        const topPhaseConfidence = document.getElementById('topPhaseConfidence');
+        const topPhaseDesc = document.getElementById('topPhaseDesc');
+        const topPhaseProgress = document.getElementById('topPhaseProgress');
+        const sampleImages = document.querySelectorAll('.sample-img');
+        const modelStatus = document.getElementById('modelStatus');
+        
+        // ============================================
+        // EVENT LISTENERS
+        // ============================================
+        browseBtn.addEventListener('click', () => imageInput.click());
+        
+        imageInput.addEventListener('change', function(e) {
+            if (this.files && this.files[0]) {
+                handleImageUpload(this.files[0]);
+            }
+        });
+        
+        uploadArea.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            this.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            this.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', function(e) {
+            e.preventDefault();
+            this.classList.remove('dragover');
+            
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                handleImageUpload(e.dataTransfer.files[0]);
+            }
+        });
+        
+        removeImageBtn.addEventListener('click', function() {
+            resetImage();
+        });
+        
+        classifyBtn.addEventListener('click', async function() {
+            await classifyImage();
+        });
+        
+        sampleImages.forEach(img => {
+            img.addEventListener('click', function() {
+                sampleImages.forEach(i => i.classList.remove('active'));
+                this.classList.add('active');
+                
+                const className = this.getAttribute('data-class');
+                let sampleImageUrl = this.src;
+                
+                // Set preview
+                previewImage.src = sampleImageUrl;
+                previewContainer.style.display = 'block';
+                classifyBtn.disabled = false;
+                
+                // Auto-classify after 1 second
+                setTimeout(() => {
+                    classifyImage();
+                }, 1000);
+            });
+        });
+        
+        // ============================================
+        // UTILITY FUNCTIONS
+        // ============================================
+        function showStatus(message, type = 'info') {
+            modelStatus.innerHTML = `
+                <div class="alert alert-${type} alert-dismissible fade show">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
             `;
+            modelStatus.style.display = 'block';
             
-            allPredictions.appendChild(predictionElement);
-        });
-        
-        // Update class descriptions
-        updateClassDescriptions(predictions);
-    }
-    
-    function updateClassDescriptions(predictions) {
-        // Find confidence for each class
-        const williamsPred = predictions.find(p => p.className === "Williams Domain");
-        const fluctuatingPred = predictions.find(p => p.className === "Fluctuating Williams Domain");
-        const gridPred = predictions.find(p => p.className === "Grid Pattern");
-        
-        // Update description elements
-        const descElements = document.querySelectorAll('.class-description');
-        descElements.forEach(el => {
-            // Remove existing confidence badge if any
-            const existingConfidence = el.querySelector('.confidence-badge');
-            if (existingConfidence) {
-                existingConfidence.remove();
+            // Auto-hide after 5 seconds
+            if (type !== 'danger') {
+                setTimeout(() => {
+                    modelStatus.style.display = 'none';
+                }, 5000);
             }
-            
-            // Add new confidence
-            let confidence = 0;
-            if (el.classList.contains('class-williams') && williamsPred) {
-                confidence = williamsPred.confidence;
-            } else if (el.classList.contains('class-fluctuating') && fluctuatingPred) {
-                confidence = fluctuatingPred.confidence;
-            } else if (el.classList.contains('class-grid') && gridPred) {
-                confidence = gridPred.confidence;
-            }
-            
-            if (confidence > 0) {
-                const confidenceEl = document.createElement('div');
-                confidenceEl.className = 'mt-2 confidence-badge';
-                confidenceEl.innerHTML = `<span class="badge bg-light text-dark">
-                    <i class="fas fa-chart-line me-1"></i>Confidence: ${confidence.toFixed(2)}%
-                </span>`;
-                el.appendChild(confidenceEl);
-            }
-        });
-    }
-    
-    function showError(message) {
-        document.getElementById('errorMessage').textContent = message;
-        const errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
-        errorModal.show();
-    }
-    
-    // Initialize on page load
-    window.addEventListener('DOMContentLoaded', async () => {
-        console.log('Starting a domain pattern classification application with a native model...');
-        
-        // Load real model
-        await loadRealModel();
-        
-        // Enable classify button if there's already an image
-        if (previewImage.src && previewImage.src !== '') {
-            classifyBtn.disabled = false;
         }
-    });
-</script>
+        
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            const errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
+            errorModal.show();
+        }
+        
+        function handleImageUpload(file) {
+            if (!file.type.match('image.*')) {
+                showError('File must be an image (JPG, PNG, GIF)');
+                return;
+            }
+            
+            if (file.size > 5 * 1024 * 1024) {
+                showError('Maximum file size is 5MB');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                previewImage.src = e.target.result;
+                previewContainer.style.display = 'block';
+                classifyBtn.disabled = false;
+                uploadArea.style.display = 'none';
+                
+                sampleImages.forEach(img => img.classList.remove('active'));
+            };
+            reader.readAsDataURL(file);
+        }
+        
+        function resetImage() {
+            previewImage.src = '';
+            previewContainer.style.display = 'none';
+            classifyBtn.disabled = true;
+            uploadArea.style.display = 'block';
+            imageInput.value = '';
+            
+            sampleImages.forEach(img => img.classList.remove('active'));
+            resultsContainer.style.display = 'none';
+            initialMessage.style.display = 'block';
+        }
+        
+        // ============================================
+        // MODEL FUNCTIONS
+        // ============================================
+        async function loadModel() {
+            try {
+                showStatus('🔄 Loading TF.js model...', 'info');
+                console.log('Loading model from:', MODEL_CONFIG.url);
+                
+                model = await tf.loadLayersModel(MODEL_CONFIG.url);
+                
+                // Warm-up model
+                const warmupInput = tf.zeros([1, ...MODEL_CONFIG.inputSize, 3]);
+                await model.predict(warmupInput);
+                warmupInput.dispose();
+                
+                isModelLoaded = true;
+                showStatus('✅ Model loaded successfully!', 'success');
+                console.log('Model loaded successfully');
+                console.log('Input shape:', model.inputs[0].shape);
+                console.log('Output shape:', model.outputs[0].shape);
+                
+                return true;
+                
+            } catch (error) {
+                console.error('Error loading model:', error);
+                showStatus(`❌ Failed to load model: ${error.message}`, 'danger');
+                return false;
+            }
+        }
+        
+        function preprocessImage(imageElement) {
+            return tf.tidy(() => {
+                return tf.browser.fromPixels(imageElement)
+                    .resizeNearestNeighbor(MODEL_CONFIG.inputSize)
+                    .toFloat()
+                    .div(255.0)
+                    .expandDims(0);
+            });
+        }
+        
+        async function classifyImage() {
+            if (!isModelLoaded) {
+                showError('Model not loaded. Please refresh the page.');
+                return;
+            }
+            
+            if (!previewImage.src) {
+                showError('Please select an image first');
+                return;
+            }
+            
+            // Show loading state
+            loader.style.display = 'block';
+            initialMessage.style.display = 'none';
+            resultsContainer.style.display = 'none';
+            classifyBtn.disabled = true;
+            
+            try {
+                const startTime = performance.now();
+                
+                // Preprocess image
+                const tensor = preprocessImage(previewImage);
+                
+                // Make prediction
+                const predictions = await model.predict(tensor);
+                const predictionsData = await predictions.data();
+                
+                const endTime = performance.now();
+                const inferenceTime = endTime - startTime;
+                
+                console.log(`Inference time: ${inferenceTime.toFixed(0)}ms`);
+                console.log('Predictions:', Array.from(predictionsData));
+                
+                // Cleanup
+                tensor.dispose();
+                predictions.dispose();
+                
+                // Process results
+                const results = processResults(predictionsData);
+                displayResults(results);
+                
+                // Show results
+                loader.style.display = 'none';
+                resultsContainer.style.display = 'block';
+                
+            } catch (error) {
+                console.error('Classification error:', error);
+                showError(`An error occurred: ${error.message}`);
+            } finally {
+                loader.style.display = 'none';
+                classifyBtn.disabled = false;
+            }
+        }
+        
+        function processResults(predictionsData) {
+            const results = MODEL_CONFIG.classes.map((cls, index) => {
+                let confidence = predictionsData[index];
+                
+                // Ensure valid probability
+                if (confidence < 0) confidence = 0;
+                if (confidence > 1) confidence = confidence / 100;
+                
+                return {
+                    ...cls,
+                    confidence: confidence * 100
+                };
+            });
+            
+            // Normalize to 100%
+            const total = results.reduce((sum, r) => sum + r.confidence, 0);
+            if (Math.abs(total - 100) > 0.1) {
+                results.forEach(r => r.confidence = (r.confidence / total) * 100);
+            }
+            
+            // Sort by confidence
+            results.sort((a, b) => b.confidence - a.confidence);
+            
+            return results;
+        }
+        
+        function displayResults(results) {
+            // Clear previous predictions
+            allPredictions.innerHTML = '';
+            
+            // Update top prediction
+            const topResult = results[0];
+            topPhaseBadge.textContent = topResult.name;
+            topPhaseBadge.style.backgroundColor = topResult.color;
+            topPhaseName.textContent = topResult.name;
+            topPhaseConfidence.textContent = `${topResult.confidence.toFixed(2)}%`;
+            topPhaseDesc.textContent = topResult.description;
+            topPhaseProgress.style.width = `${topResult.confidence}%`;
+            topPhaseProgress.style.backgroundColor = topResult.color;
+            
+            // Display all predictions
+            results.forEach((result, index) => {
+                const predictionElement = document.createElement('div');
+                predictionElement.className = `prediction-item ${index === 0 ? 'highest' : ''}`;
+                
+                predictionElement.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge phase-badge me-2" style="background-color: ${result.color}">
+                                ${result.name}
+                            </span>
+                            <span class="text-muted">${result.description}</span>
+                        </div>
+                        <div class="text-end">
+                            <div class="fw-bold prediction-confidence">${result.confidence.toFixed(2)}%</div>
+                            <div class="progress" style="width: 100px; height: 6px;">
+                                <div class="progress-bar" role="progressbar" 
+                                     style="width: ${result.confidence}%; background-color: ${result.color}">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                allPredictions.appendChild(predictionElement);
+            });
+        }
+        
+        // ============================================
+        // INITIALIZATION
+        // ============================================
+        window.addEventListener('DOMContentLoaded', async () => {
+            console.log('🚀 Starting domain pattern classifier...');
+            
+            // Load model
+            const modelLoaded = await loadModel();
+            
+            if (modelLoaded) {
+                classifyBtn.disabled = !previewImage.src;
+            }
+        });
+    </script>
+</body>
+</html>
